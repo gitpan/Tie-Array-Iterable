@@ -4,11 +4,21 @@ package Tie::Array::Iterable::ForwardIterator;
 
 #=============================================================================
 #
-# $Id: ForwardIterator.pm,v 0.01 2001/11/11 18:36:14 mneylon Exp $
-# $Revision: 0.01 $
+# $Id: ForwardIterator.pm,v 0.03 2001/11/16 02:27:58 mneylon Exp $
+# $Revision: 0.03 $
 # $Author: mneylon $
-# $Date: 2001/11/11 18:36:14 $
+# $Date: 2001/11/16 02:27:58 $
 # $Log: ForwardIterator.pm,v $
+# Revision 0.03  2001/11/16 02:27:58  mneylon
+# Fixed packing version variables
+#
+# Revision 0.01.01.2  2001/11/16 02:12:16  mneylon
+# Added code to clean up iterators after use
+# clear_iterators() now not needed, simply returns 1;
+#
+# Revision 0.01.01.1  2001/11/15 01:41:21  mneylon
+# Branch from 0.01 for new features
+#
 # Revision 0.01  2001/11/11 18:36:14  mneylon
 # Initial Release
 #
@@ -18,10 +28,13 @@ package Tie::Array::Iterable::ForwardIterator;
 use 5.006;
 use strict;
 
+my $FORWARDID;
+my %FORWARDITERS;
+
 BEGIN {
 	use Exporter   ();
 	use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-	$VERSION     = sprintf( "%d.%02d", q($Revision: 0.01 $) =~ /\s(\d+)\.(\d+)/ );
+	( $VERSION ) = '$Revision: 0.03 $ ' =~ /\$Revision:\s+([^\s]+)/;
 	@ISA         = qw( Exporter );
 	@EXPORT      = qw( );
 	@EXPORT_OK   = qw( );
@@ -36,11 +49,18 @@ sub new {
 		unless ( UNIVERSAL::isa( $iterarray, "Tie::Array::Iterable" ) );
 	my %data = (
 		array => $iterarray,
-		pos => $pos );
+		pos => $pos,
+		id => ++$FORWARDID );
+	$FORWARDITERS{ $data{ id } } = \%data;
 	return bless \%data, $class;
 }
 
-sub at_start {
+sub DESTROY {
+	my $self = shift;
+	$self->{ array }->_remove_forward_iterator( $self->{ id } );
+}
+
+sub at_start () {
 	my $self = shift;
 	if ( $self->{ pos } <= 0 ) {
 		return 1;
@@ -49,7 +69,7 @@ sub at_start {
 	}
 }
 
-sub at_end {
+sub at_end () {
 	my $self = shift;
 	if ( $self->{ pos } >= scalar @{ $self->{ array } } ) {
 		return 1;
@@ -58,12 +78,12 @@ sub at_end {
 	}
 }
 
-sub to_start {
+sub to_start () {
 	my $self = shift;
 	$self->{ pos } = 0;
 }
 
-sub to_end {
+sub to_end () {
 	my $self = shift;
 	$self->{ pos } = scalar @{ $self->{ array } };
 }
@@ -95,7 +115,7 @@ sub set_index {
 	$self->{ pos } = $index;
 }
 
-sub next {
+sub next () {
 	my $self = shift;
 	if ( $self->at_end() ) {
 		return undef; 
@@ -104,7 +124,7 @@ sub next {
 	return $self->value();
 }
 
-sub prev {
+sub prev () {
 	my $self = shift;
 	if ( $self->at_start() ) {
 		return undef;
@@ -131,6 +151,16 @@ sub backward {
 	my $value = $self->value();
 	$value = $self->prev() for ( 1..$steps );
 	return $value;
+}
+
+sub _lookup ($) {
+	my $id = shift;
+	return $FORWARDITERS{ $id };
+}
+
+sub _id {
+	my $self = shift;
+	return $self->{ id };
 }
 
 1;

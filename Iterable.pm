@@ -4,11 +4,21 @@ package Tie::Array::Iterable;
 
 #=============================================================================
 #
-# $Id: Iterable.pm,v 0.01 2001/11/11 18:36:10 mneylon Exp $
-# $Revision: 0.01 $
+# $Id: Iterable.pm,v 0.03 2001/11/16 02:27:56 mneylon Exp $
+# $Revision: 0.03 $
 # $Author: mneylon $
-# $Date: 2001/11/11 18:36:10 $
+# $Date: 2001/11/16 02:27:56 $
 # $Log: Iterable.pm,v $
+# Revision 0.03  2001/11/16 02:27:56  mneylon
+# Fixed packing version variables
+#
+# Revision 0.01.01.2  2001/11/16 02:12:14  mneylon
+# Added code to clean up iterators after use
+# clear_iterators() now not needed, simply returns 1;
+#
+# Revision 0.01.01.1  2001/11/15 01:41:19  mneylon
+# Branch from 0.01 for new features
+#
 # Revision 0.01  2001/11/11 18:36:10  mneylon
 # Initial Release
 #
@@ -25,7 +35,7 @@ use Tie::Array::Iterable::BackwardIterator;
 BEGIN {
     use Exporter   ();
     use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-    $VERSION     = sprintf( "%d.%02d", q($Revision: 0.01 $) =~ /\s(\d+)\.(\d+)/ );
+    ( $VERSION ) = '$Revision: 0.03 $ ' =~ /\$Revision:\s+([^\s]+)/;
     @ISA         = qw( Exporter Tie::StdArray );
     @EXPORT      = qw( );
 	@EXPORT_OK   = qw( iterate_from_start iterate_from_end );
@@ -96,10 +106,10 @@ sub EXISTS {
 sub CLEAR {
 	my $self = shift;
 	$self->{ array } = [];
-	foreach my $iter ( @{ $self->{ forward_iters } } ) {
+	foreach my $iter ( $self->_get_forward_iters() ) {
 		$iter->set_index( 0 );
 	}
-	foreach my $iter ( @{ $self->{ backward_iters } } ) {
+	foreach my $iter ( $self->_get_backward_iters() ) {
 		$iter->set_index( 0 );
 	}
 	return 1;
@@ -110,12 +120,12 @@ sub PUSH {
 	my @list = @_;
 	my $last = $self->FETCHSIZE();
 	$self->STORE( $last + $_, $list[$_] ) foreach 0 .. $#list;
-	foreach my $iter ( @{ $self->{ forward_iters } } ) {
+	foreach my $iter ( $self->_get_forward_iters() ) {
 		if ( $iter->index() == $last ) {
 			$iter->set_index( $last + scalar @list );
 		}
 	}
-	foreach my $iter ( @{ $self->{ backward_iters } } ) {
+	foreach my $iter ( $self->_get_backward_iters() ) {
 		if ( $iter->index() == $last ) {
 			$iter->set_index( $last + scalar @list );
 		}
@@ -125,12 +135,12 @@ sub PUSH {
 
 sub POP {
 	my $self = shift;
-	foreach my $iter ( @{ $self->{ forward_iters } } ) {
+	foreach my $iter ( $self->_get_forward_iters() ) {
 		if ( $iter->index() >= $self->FETCHSIZE() ) {
 			$iter->set_index( $iter->index()-1 );
 		}
 	}
-	foreach my $iter ( @{ $self->{ backward_iters } } ) {
+	foreach my $iter ( $self->_get_backward_iters() ) {
 		if ( $iter->index() >= $self->FETCHSIZE() ) {
 			$iter->set_index( $iter->index()-1 );
 		}
@@ -147,12 +157,12 @@ sub UNSHIFT {
 	@{$self->{ array }}[ $size .. $#{$self->{ array }} + $size ]
 		= @{$self->{ array }};
 	$self->STORE( $_, $list[$_] ) foreach 0 .. $#list;
-	foreach my $iter ( @{ $self->{ forward_iters } } ) {
+	foreach my $iter ( $self->_get_forward_iters() ) {
 		if ( $iter->index() > 0 ) {
 			$iter->set_index( $iter->index() + scalar @list );
 		}
 	}	
-	foreach my $iter ( @{ $self->{ backward_iters } } ) {
+	foreach my $iter ( $self->_get_backward_iters() ) {
 		if ( $iter->index() > 0 ) {
 			$iter->set_index( $iter->index() + scalar @list );
 		}
@@ -162,12 +172,12 @@ sub UNSHIFT {
 
 sub SHIFT {
 	my $self = shift;
-	foreach my $iter ( @{ $self->{ forward_iters } } ) {
+	foreach my $iter ( $self->_get_forward_iters() ) {
 		if ( $iter->index() > 0 ) {
 			$iter->set_index( $iter->index()-1 );
 		}
 	}
-	foreach my $iter ( @{ $self->{ backward_iters } } ) {
+	foreach my $iter ( $self->_get_backward_iters() ) {
 		if ( $iter->index() > 0 ) {
 			$iter->set_index( $iter->index()-1 );
 		}
@@ -190,7 +200,7 @@ sub SPLICE {
 	# Do the splice first:
 	my @data = splice @{ $self->{ array } }, $offset, $length, @list;
 
-	foreach my $iter ( @{ $self->{ forward_iters } } ) {
+	foreach my $iter ( $self->_get_forward_iters() ) {
 		# If beyond the splice point...
 		if ( $iter->index() > $offset ) {
 			# If outside of the offset boundary
@@ -204,7 +214,7 @@ sub SPLICE {
 			}
 		}	
 	}
-	foreach my $iter ( @{ $self->{ backward_iters } } ) {
+	foreach my $iter ( $self->_get_backward_iters() ) {
 		# If beyond the splice point...
 		if ( $iter->index() > $offset ) {
 			# If outside of the offset boundary
@@ -221,14 +231,14 @@ sub SPLICE {
 	return splice @data;
 }
 
-sub from_start {
+sub from_start () {
 	my $self = shift;
 	my $iter = new Tie::Array::Iterable::ForwardIterator( $self, 0 );
-	push @{ tied(@$self)->{ forward_iters } }, $iter;
+	push @{ tied(@$self)->{ forward_iters } }, $iter->_id();
 	return $iter;
 }
 
-sub forward_from {
+sub forward_from  {
 	my $self = shift;
 	my $pos = shift;
 	if ( $pos == 0 && $pos ne "0" ) {
@@ -237,15 +247,15 @@ sub forward_from {
 	die "Position must be in array bounds"
 		unless $pos >= 0 && $pos < scalar @$self;
 	my $iter = new Tie::Array::Iterable::ForwardIterator( $self, $pos );
-	push @{ tied(@$self)->{ forward_iters } }, $iter;
+	push @{ tied(@$self)->{ forward_iters } }, $iter->_id();
 	return $iter;
 }
 
-sub from_end {
+sub from_end () {
 	my $self = shift;
 	my $iter = new Tie::Array::Iterable::BackwardIterator( $self, 
 		scalar @$self );
-	push @{ tied(@$self)->{ backward_iters } }, $iter;
+	push @{ tied(@$self)->{ backward_iters } }, $iter->_id();
 	return $iter;
 }
 
@@ -258,14 +268,14 @@ sub backward_from {
 	die "Position must be in array bounds"
 		unless $pos >= 0 && $pos <= scalar @$self;
 	my $iter = new Tie::Array::Iterable::BackwardIterator( $self, $pos );
-	push @{ tied(@$self)->{ backward_iters } }, $iter;
+	push @{ tied(@$self)->{ backward_iters } }, $iter->_id();
 	return $iter;
 }
 
+# This function is no longer necessary
+
 sub clear_iterators {
-	my $self = shift;
-	tied(@$self)->{ forward_iters } = [];
-	tied(@$self)->{ backward_iters } = [];
+	1;
 }
 
 
@@ -289,6 +299,37 @@ sub iterate_backward_from {
     my $pos = shift;
 	my $array = new Tie::Array::Iterable( @_ );
 	return $array->backward_from( $pos );
+}
+
+sub _get_forward_iters {
+	my $self = shift;
+	return grep { $_ } 
+	       map { Tie::Array::Iterable::ForwardIterator::_lookup( $_ ) }
+		   @{ $self->{ forward_iters } };
+}
+
+sub _get_backward_iters {
+	my $self = shift;
+	return grep { $_ } 
+	       map { Tie::Array::Iterable::BackwardIterator::_lookup( $_ ) }
+		   @{ $self->{ backward_iters } };
+}
+
+sub _remove_forward_iterator {
+	my $self = shift;
+	my $id = shift;
+	use Data::Dumper;
+	tied(@$self)->{ forward_iters } = [
+		grep { $_ != $id }
+		@{ tied(@$self)->{ forward_iters } } ];
+}
+
+sub _remove_backward_iterator {
+	my $self = shift;
+	my $id = shift;
+	tied(@$self)->{ backward_iters } = [
+		grep { $_ != $id }
+		@{ tied(@$self)->{ backward_iters } } ];
 }
 
 1;
@@ -376,8 +417,8 @@ The logic behind how iterators will 'move' depending on actions are
 listed here.  Given the list
 
     0 1 2 3 4 5 6 7 8 9 10
-	         ^
-		     Forward iterator current position
+             ^
+             Forward iterator current position
 
 Several possible cases can be considered:
 
@@ -472,10 +513,12 @@ position.
 =item from_start( )
 
 Returns a new forward iterator set at the start of the array.
+Parentheses are not required.
 
 =item from_end( )
 
 Returns a new backward iterator set at the end of the array.
+Parentheses are not required.
 
 =item forward_from ([<int>]) 
 
@@ -489,15 +532,9 @@ the end of the array if no value is passed).
 
 =item clear_iterators( )
 
-Because of the way to get this class written, iterators are stored in
-the iterable array structure, and thus when the iterators go out of scope
-but the iterable array do not; thus, because there is still a reference
-to these iterators in the array, they will never be freed until the 
-iterable array is deleted.  A future version of this module may fix this
-problem, but until then, this function will delete all iterators stored
-in the array.  B<Do not call this method while an iterator is in use; 
-you may get unexpected results.>  If the deletion problem is fixed, this
-function will do nothing in future versions.
+This function was previously used to clear references that might
+accumulate; however, this functionality has been fixed, and this
+function does nothing besides return a true value.
 
 =back
 
@@ -531,38 +568,40 @@ Moves the iterator to this position in the array.
 
 Returns true if the iterator is pointing at the end position (at the end
 of the array for a Forward iterator, at the start of the array for the
-Backward iterator), false otherwise.
+Backward iterator), false otherwise.  Parentheses are not required.
 
 =item at_start()
 
 Returns true if the iterator is pointing at the start position (at the
 beginning of the array for a Forward iterator, at the end of the array 
-for the Backward iterator), false otherwise.
+for the Backward iterator), false otherwise.  Parentheses are not required.
 
 =item next()
 
 Advances the iterator to the next position; the value of this new 
 position is returned as per C<value()>.  This will not move past the
-end position.
+end position.  Parentheses are not required.
+
 
 =item prev()
 
 Advances the iterator to the previous position; the value of this
 new position is returned as per C<value()>.  This will not move past
-the starting position.
+the starting position.  Parentheses are not required.
 
 =item to_end()
 
 Advances the iterator to the very end position.  Note that this is the
 undefined state, and the only way to resume traversal is to move to
 preceeding elements.  Also note that for a backwards iterator, this
-means to move to the beginning of the array.
+means to move to the beginning of the array.  Parentheses are not required.
+
 
 =item to_start()
 
 Advances the iterator back to the starting position for the iterator.
 Again, for a backwards iterator, this means moving to the end of the 
-list.
+list.  Parentheses are not required.
 
 =item forward( [<int>] )
 
@@ -589,16 +628,20 @@ You should not directly tie your array to this class, nor use the
 ForwardIterator or BackwardIterator classes directly.  There are
 factory-like methods for these classes that you should use instead.
 
-Because of reference storage, Iterators will not be destroyed when they
-go out of scope.  These objects are currently small in terms of memory
-use, but creating numerous Iterators may tax memory.  For these
-purposes, the C<clear_iterators> method has been provided which can be
-called to delete the iterators.  Do note that this method should not be
-used while iterators are active without unpredictable results.
+You might run in to trouble if you use more than MAXINT (typically 2^32 on
+most 32-bit machines) iterators during a single instance of the program.  
+If this is a practical concern, please let me know; that can be fixed
+though with some time consumption.
 
 =head1 AUTHOR
 
 Michael K. Neylon E<lt>mneylon-pm@masemware.comE<gt>
+
+=head1 ACKNOWLEDGEMENTS
+
+I'd like to thank Chip Salzenberg for a useful suggesting in helping to
+remove the reference problem without having to resort to weak references
+on Perlmonks.
 
 =head1 REFERENCES
 
